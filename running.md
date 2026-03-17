@@ -2,23 +2,22 @@
 
 ## 当前目标
 
-把当前已经跑通的 `bash` 工具调用雏形整理成“可扩展的工具框架基线”。本轮重点不是再证明工具调用可行，而是把现有硬编码逻辑抽出来，为后续 `list_dir`、`read_file`、`search_text` 做准备。
+在现有 `tools/` 包基础上补齐第一批只读工具，并继续瘦身 `main.py`。当前项目已经有统一工具接口、注册表、`bash` 和 `read_file`，下一步重点是把“看代码库”常用能力补齐。
 
 ## 本轮范围
 
-只做工具框架整理和第一批只读工具准备。
+只做只读工具补齐和主循环整理。
 
 包括：
 
-- 抽象工具接口
-- 工具注册接口
-- 通用工具执行分发
-- 保留现有 `bash` 工具能力
-- 规划并接入第一批只读工具
+- 保留现有 `bash` / `read_file` 工具能力
+- 接入 `write_file`
+- 接入 `search_text`
+- 继续把 `call_request()` 中的工具细节拆出去
+- 补齐工具日志和错误信息
 
 不包括：
 
-- 文件写入工具
 - 自动扫描项目上下文
 - 大规模模块重构
 
@@ -28,25 +27,20 @@
 
 当前问题：
 
-- 当前已经能处理 `tool_use`
-- 但 `TOOLS` 只是一个硬编码列表
-- `call_request()` 里直接写死了 `run_bash(block.input["command"])`
-- 后续一旦增加第二个工具，`if block.type == "tool_use"` 里的专用逻辑会迅速膨胀
+- 这一步已经基本完成
+- 当前已有 [tools/base.py](/home/luo/project/nano_code/tools/base.py)、[tools/registry.py](/home/luo/project/nano_code/tools/registry.py)、[tools/bash.py](/home/luo/project/nano_code/tools/bash.py)、[tools/read.py](/home/luo/project/nano_code/tools/read.py)
+- 但 `main.py` 里的 `call_request()` 仍然知道太多工具执行细节
 
 要做的事：
 
-- 定义统一工具结构，至少包括：
-  - `name`
-  - `description`
-  - `input_schema`
-  - `handler`
-- 让 `TOOLS` 成为“工具定义列表”，而不是只用于传给 API 的裸字典
-- 提供 `get_tool_definitions()`，只返回 API 需要的字段
-- 提供 `execute_tool(tool_name, tool_input)`，统一执行并返回结果
+- 保留现有工具接口不再大改
+- 把“从响应中提取 tool_use 块”提成独立函数
+- 把“执行单个工具并生成 tool_result”提成独立函数
+- 让 `call_request()` 只负责循环和前台展示顺序
 
 建议落点：
 
-- [main.py](/home/luo/project/nano_code/main.py) 的 `TOOLS`、`run_bash()`、`call_request()`
+- [main.py](/home/luo/project/nano_code/main.py) 的 `call_request()`
 
 ### 2. 整理 `call_request()`，让它只负责循环，不负责知道每个工具细节
 
@@ -56,7 +50,7 @@
   - 发请求
   - 打印中间文本
   - 打印工具状态
-  - 执行具体 bash 命令
+  - 调用通用工具执行器
   - 组装 `tool_result`
 - 这会让它成为后续最容易失控的函数
 
@@ -73,11 +67,11 @@
 建议实现方式：
 
 - 这一轮可以继续留在 [main.py](/home/luo/project/nano_code/main.py)
-- 但函数边界要先切出来，后面再搬到 `tools.py`
+- 但函数边界要继续切出来，后面再搬到独立 `agent` 模块
 
 验收点：
 
-- `call_request()` 不直接调用 `run_bash()`
+- `call_request()` 不直接知道任何具体工具输入结构
 - 新增工具时不需要再改主循环结构
 - 工具名不存在时能返回清楚错误
 
@@ -85,9 +79,9 @@
 
 当前问题：
 
-- 当前只有 `bash`
-- 从用户体验和安全性看，直接让模型用 shell 读文件太粗糙
-- 需要更明确、更可控的只读工具来替代大部分“看代码”场景
+- 当前已有 `read_file`
+- 但还缺两个高频只读工具：`list_dir` 和 `search_text`
+- 没有这两个工具，模型仍会过度依赖 shell 来查看项目
 
 要做的事：
 
@@ -119,7 +113,7 @@
 当前问题：
 
 - 当前已经能回填 `tool_result`
-- 但回填逻辑仍和 `bash` 强耦合
+- 但回填逻辑仍放在 `main.py`，且工具状态输出和结果组装混在一起
 
 要做的事：
 
@@ -140,12 +134,13 @@
 当前问题：
 
 - 当前前台已采用“中间文本 -> Running/Finish -> 最终回答”
-- 但文档和日志规范还没有完全围绕这个交互模型整理
+- 但工具日志仍偏粗
+- `read_file`、后续 `list_dir`、`search_text` 需要更贴近工具本身的摘要字段
 
 要做的事：
 
 - 工具调用开始时写日志：工具名、入参摘要
-- 工具成功时写日志：结果长度或命中数量
+- 工具成功时写日志：结果长度、命中数量或条目数
 - 工具失败时写日志：异常细节
 - 前台继续避免打印原始块结构和工具原始输出
 
@@ -161,18 +156,19 @@
 
 完成这一步后，程序应满足：
 
-- 当前 `bash` 工具仍然可用
+- 当前 `bash` 和 `read_file` 工具仍然可用
 - 新增工具时不需要修改主循环的核心结构
 - 用户问“查看 README 内容”时，模型可以优先调用 `read_file`
 - 用户问“当前目录有哪些文件”时，模型可以优先调用 `list_dir`
+- 用户问“哪里定义了 agent_loop”时，模型可以优先调用 `search_text`
 - 工具执行过程前台输出简洁，详细过程写入日志文件
 - 工具失败不会导致进程退出
 
 ## 建议实施顺序
 
-1. 先抽工具接口和执行分发
-2. 再把 `bash` 工具接入统一接口
-3. 然后实现 `list_dir`、`read_file`、`search_text`
+1. 先实现 `list_dir`
+2. 再实现 `search_text`
+3. 然后继续拆 `call_request()` 里的工具结果组装
 4. 最后补更细的日志和错误分类
 
 ## 手动验证
@@ -180,10 +176,10 @@
 建议至少做下面 5 组检查：
 
 1. 问一个需要 shell 的问题，确认当前 `bash` 工具仍可触发
-2. 问“当前目录有哪些文件”，确认会优先触发 `list_dir`
-3. 问“读取 README.md”，确认会优先触发 `read_file`
+2. 问“读取 README.md”，确认会优先触发 `read_file`
+3. 问“当前目录有哪些文件”，确认会优先触发 `list_dir`
 4. 给一个不存在的路径，确认工具失败会被记录并回传模型
-5. 检查日志文件，确认能看到工具调用入参和结果摘要
+5. 问“搜索 agent_loop 在哪里定义”，确认会优先触发 `search_text`
 
 ## 下一步衔接
 

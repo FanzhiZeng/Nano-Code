@@ -6,7 +6,7 @@
 
 - 支持多轮对话
 - 支持 Anthropic `tool_use` / `tool_result` 循环
-- 内置一个实验性的 `bash` 工具
+- 已接入 `bash` 和 `read_file` 两个工具
 - 前台会先显示模型中间话术，再显示 `[Running]` / `[Finish]` 工具状态，最后显示最终回答
 
 ## 快速开始
@@ -31,12 +31,15 @@ uv run python main.py
 - 总体待办见 [todo.md](/home/luo/project/nano_code/todo.md)
 - 下一步执行说明见 [running.md](/home/luo/project/nano_code/running.md)
 - 当前入口代码见 [main.py](/home/luo/project/nano_code/main.py)
+- 工具抽象和注册表见 [tools/__init__.py](/home/luo/project/nano_code/tools/__init__.py)
+- 配置数据结构见 [agent_config.py](/home/luo/project/nano_code/agent_config.py)
 
 ## 当前限制
 
-- 目前只有一个硬编码的 `bash` 工具
-- 工具注册、权限控制和路径约束还没有抽象出来
-- 代码仍集中在 `main.py`，还没有拆成模块
+- 目前只有 `bash` 和 `read_file` 两个基础工具
+- `write_file`、`search_text` 还没有接入
+- `call_request()` 里仍保留了工具状态打印和 `tool_result` 组装逻辑
+- `bash` 工具的安全限制还比较粗糙
 
 ## 参考
 

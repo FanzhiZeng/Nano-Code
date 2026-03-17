@@ -9,40 +9,15 @@ from pathlib import Path
 from anthropic import Anthropic
 from dotenv import load_dotenv
 
+from agent_config import Config
+
+from tools import execute_tool, get_tool_definitions
 
 SYSTEM = f"You are a coding agent at {os.getcwd()}."
 LOGGER_NAME = "nano_code"
 
 
-@dataclass
-class Config:
-    api_key: str
-    model_id: str
-    base_url: str | None = None
-
-TOOLS = [{
-    "name": "bash",
-    "description": "Run a shell command.",
-    "input_schema": {
-        "type": "object",
-        "properties": {"command": {"type": "string"}},
-        "required": ["command"],
-    },
-}]
-
-
-def run_bash(command: str) -> str:
-    dangerous = ["rm -rf /", "sudo", "shutdown", "reboot", "> /dev/"]
-    if any(d in command for d in dangerous):
-        return "Error: Dangerous command blocked"
-    try:
-        r = subprocess.run(command, shell=True, cwd=os.getcwd(),
-                           capture_output=True, text=True, timeout=120)
-        out = (r.stdout + r.stderr).strip()
-        return out[:50000] if out else "(no output)"
-    except subprocess.TimeoutExpired:
-        return "Error: Timeout (120s)"
-
+TOOLS = get_tool_definitions()
 
 def extract_text_from_blocks(content_blocks) -> str:
     parts = []
@@ -134,13 +109,15 @@ def call_request(client: Anthropic, messages: list[dict], model_id: str) -> list
         response = LLM(messages, tools)
         execute tools
         append results
-    +----------+      +-------+      +---------+
-    |   User   | ---> |  LLM  | ---> |  Tool   |
-    |  prompt  |      |       |      | execute |
-    +----------+      +---+---+      +----+----+
-                            ^               |
-                            |   tool_result |
-                            +---------------+
+    +--------+      +-------+      +------------------+
+    |  User  | ---> |  LLM  | ---> | Tool Dispatch    |
+    | prompt |      |       |      | {                |
+    +--------+      +---+---+      |   bash: run_bash |
+                        ^           |   read: run_read |
+                        |           |   write: run_wr  |
+                        +-----------+   edit: run_edit |
+                        tool_result | }                |
+                                    +------------------+
                             (loop continues)
     This is the core loop: feed tool results back to the model
     until the model decides to stop.
@@ -176,7 +153,9 @@ def call_request(client: Anthropic, messages: list[dict], model_id: str) -> list
             if block.type == "tool_use":
                 print(format_tool_status(block, "Running"))
                 logger.info("Running tool %s with input: %s", block.name, block.input)
-                output = run_bash(block.input["command"])
+
+                output = execute_tool(block.name, block.input)
+
                 print(format_tool_status(block, "Finish"))
                 logger.info("Tool %s output preview: %s", block.name, output[:1000])
                 results.append({"type": "tool_result", "tool_use_id": block.id,
