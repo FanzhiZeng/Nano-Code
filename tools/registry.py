@@ -1,9 +1,11 @@
 from .base import Tool
 from .bash import BASH_TOOL
-from .read import READ_TOOL
+from .read_file import READ_TOOL
+from .web_search import WEB_SEARCH_TOOL
+from .write_file import WRITE_TOOL
 
 
-TOOLS = [BASH_TOOL, READ_TOOL]
+TOOLS = [BASH_TOOL, READ_TOOL, WEB_SEARCH_TOOL, WRITE_TOOL]
 
 def get_tool_definitions(tools: list[Tool] | None = None) -> list[dict]:
     tool_list = TOOLS if tools is None else tools
