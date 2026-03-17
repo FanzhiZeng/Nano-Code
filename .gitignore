@@ -137,3 +137,4 @@ Thumbs.db
 *.local
 config.local.yaml
 config.local.json
+logs/
