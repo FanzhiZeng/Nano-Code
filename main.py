@@ -1,4 +1,6 @@
 import os
+import subprocess
+
 import logging
 from dataclasses import dataclass
 from datetime import datetime
@@ -17,6 +19,48 @@ class Config:
     api_key: str
     model_id: str
     base_url: str | None = None
+
+TOOLS = [{
+    "name": "bash",
+    "description": "Run a shell command.",
+    "input_schema": {
+        "type": "object",
+        "properties": {"command": {"type": "string"}},
+        "required": ["command"],
+    },
+}]
+
+
+def run_bash(command: str) -> str:
+    dangerous = ["rm -rf /", "sudo", "shutdown", "reboot", "> /dev/"]
+    if any(d in command for d in dangerous):
+        return "Error: Dangerous command blocked"
+    try:
+        r = subprocess.run(command, shell=True, cwd=os.getcwd(),
+                           capture_output=True, text=True, timeout=120)
+        out = (r.stdout + r.stderr).strip()
+        return out[:50000] if out else "(no output)"
+    except subprocess.TimeoutExpired:
+        return "Error: Timeout (120s)"
+
+
+def extract_text_from_blocks(content_blocks) -> str:
+    parts = []
+    for block in content_blocks:
+        if getattr(block, "type", None) == "text":
+            parts.append(block.text)
+    return "".join(parts).strip()
+
+
+def print_assistant_message(content_blocks) -> None:
+    text = extract_text_from_blocks(content_blocks)
+    if text:
+        print(f"\n{text}\n")
+
+
+def format_tool_status(block, status: str) -> str:
+    tool_name = getattr(block, "name", "tool")
+    return f"[{status}]: {tool_name}"
 
 
 def setup_logging() -> Path:
@@ -82,35 +126,69 @@ def build_client(config: Config) -> Anthropic:
     return Anthropic(**kwargs)
 
 
-def request_message(client: Anthropic, messages: list[dict], model_id: str) -> str:
+def call_request(client: Anthropic, messages: list[dict], model_id: str) -> list[dict]:
+    """
+    The tooluse Loop
+    The entire secret of an AI coding agent in one pattern:
+    while stop_reason == "tool_use":
+        response = LLM(messages, tools)
+        execute tools
+        append results
+    +----------+      +-------+      +---------+
+    |   User   | ---> |  LLM  | ---> |  Tool   |
+    |  prompt  |      |       |      | execute |
+    +----------+      +---+---+      +----+----+
+                            ^               |
+                            |   tool_result |
+                            +---------------+
+                            (loop continues)
+    This is the core loop: feed tool results back to the model
+    until the model decides to stop.
+    """
+
     logger = logging.getLogger(LOGGER_NAME)
     logger.debug("Sending request with %s messages", len(messages))
 
-    response = client.messages.create(
-        system=SYSTEM,
-        messages=messages,
-        model=model_id,
-        max_tokens=256,
-    )
+    while True:
+        response = client.messages.create(
+            system=SYSTEM,
+            messages=messages,
+            model=model_id,
+            tools=TOOLS,
+            max_tokens=2048,
+        )
 
-    text_parts = [
-        block.text for block in response.content if getattr(block, "type", None) == "text"
-    ]
-    if not text_parts:
-        raise RuntimeError("Model response did not contain text content.")
+        messages.append({
+            "role": "assistant",
+            "content": response.content,
+        })
 
-    content = "".join(text_parts).strip()
-    logger.debug("Received response with %s characters", len(content))
-    return content
+        if extract_text_from_blocks(response.content):
+            logger.info("Assistant intermediate/final text generated")
+            print_assistant_message(response.content)
+
+        if response.stop_reason != "tool_use":
+            break
+
+        # Execute each tool call, collect results
+        results = []
+        for block in response.content:
+            if block.type == "tool_use":
+                print(format_tool_status(block, "Running"))
+                logger.info("Running tool %s with input: %s", block.name, block.input)
+                output = run_bash(block.input["command"])
+                print(format_tool_status(block, "Finish"))
+                logger.info("Tool %s output preview: %s", block.name, output[:1000])
+                results.append({"type": "tool_result", "tool_use_id": block.id,
+                                "content": output})
+        messages.append({"role": "user", "content": results})
+
+    return messages
 
 
 def print_startup(config: Config, log_path: Path) -> None:
-    print(f"Using model: {config.model_id}")
-    if config.base_url:
-        print(f"Using base URL: {config.base_url}")
-    else:
-        print("Using default Anthropic base URL")
-    print(f"Logging to: {log_path}")
+    print(f"Nano Code ready. Model: {config.model_id}")
+    print(f"Log file: {log_path}")
 
 
 def agent_loop(client: Anthropic, model_id: str) -> None:
@@ -136,16 +214,12 @@ def agent_loop(client: Anthropic, model_id: str) -> None:
         history.append({"role": "user", "content": query})
 
         try:
-            content = request_message(client, history, model_id)
+            history = call_request(client, history, model_id)
         except Exception as exc:
             history.pop()
             logger.exception("Request failed")
             print("Request failed. Check the log file for details.")
             continue
-
-        print(content)
-        logger.info("Assistant response: %s", content)
-        history.append({"role": "assistant", "content": content})
 
 
 def main() -> None:
