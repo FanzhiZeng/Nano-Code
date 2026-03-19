@@ -1,5 +1,4 @@
 import os
-import subprocess
 
 import logging
 from dataclasses import dataclass
@@ -101,7 +100,7 @@ def build_client(config: Config) -> Anthropic:
     return Anthropic(**kwargs)
 
 
-def call_request(client: Anthropic, messages: list[dict], model_id: str) -> list[dict]:
+def agent_loop(client: Anthropic, messages: list[dict], model_id: str) -> list[dict]:
     """
     The tooluse Loop
     The entire secret of an AI coding agent in one pattern:
@@ -170,7 +169,7 @@ def print_startup(config: Config, log_path: Path) -> None:
     print(f"Log file: {log_path}")
 
 
-def agent_loop(client: Anthropic, model_id: str) -> None:
+def run(client: Anthropic, model_id: str) -> None:
     logger = logging.getLogger(LOGGER_NAME)
     history: list[dict] = []
 
@@ -193,7 +192,7 @@ def agent_loop(client: Anthropic, model_id: str) -> None:
         history.append({"role": "user", "content": query})
 
         try:
-            history = call_request(client, history, model_id)
+            history = agent_loop(client, history, model_id)
         except Exception as exc:
             history.pop()
             logger.exception("Request failed")
@@ -213,7 +212,7 @@ def main() -> None:
 
     print_startup(config, log_path)
     client = build_client(config)
-    agent_loop(client, config.model_id)
+    run(client, config.model_id)
 
 
 if __name__ == "__main__":
