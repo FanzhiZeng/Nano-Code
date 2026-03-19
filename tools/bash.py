@@ -24,10 +24,15 @@ def bash_handler(tool_input: dict[str, str]) -> str:
 
 BASH_TOOL = Tool(
     name="bash",
-    description="Run a shell command.",
+    description="Execute a shell command in the current workspace.",
     input_schema={
         "type": "object",
-        "properties": {"command": {"type": "string"}},
+        "properties": {
+            "command": {
+                "type": "string",
+                "description": "The shell command to run in the current workspace.",
+            }
+        },
         "required": ["command"],
     },
     handler=bash_handler,

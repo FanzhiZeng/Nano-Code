@@ -17,12 +17,18 @@ def write_handler(tool_input: dict[str, str]) -> str:
 
 WRITE_TOOL = Tool(
     name="write_file",
-    description="Write text content to a file inside the current workspace.",
+    description="Write text content to a file in the current workspace.",
     input_schema={
         "type": "object",
         "properties": {
-            "path": {"type": "string"},
-            "content": {"type": "string"},
+            "path": {
+                "type": "string",
+                "description": "The relative path of the file to write from the workspace root.",
+            },
+            "content": {
+                "type": "string",
+                "description": "The full text content to write into the target file.",
+            },
         },
         "required": ["path", "content"],
     },

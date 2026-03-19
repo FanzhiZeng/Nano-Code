@@ -26,10 +26,15 @@ def read_handler(tool_input: dict[str, str]) -> str:
 
 READ_TOOL = Tool(
     name="read_file",
-    description="Read a text file from the current workspace.",
+    description="Read the contents of a text file from the current workspace.",
     input_schema={
         "type": "object",
-        "properties": {"path": {"type": "string"}},
+        "properties": {
+            "path": {
+                "type": "string",
+                "description": "The relative path of the file to read from the workspace root.",
+            }
+        },
         "required": ["path"],
     },
     handler=read_handler,

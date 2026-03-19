@@ -92,12 +92,18 @@ def web_search_handler(tool_input: dict[str, str | int]) -> str:
 
 WEB_SEARCH_TOOL = Tool(
     name="web_search",
-    description="Search the web and return a short list of results.",
+    description="Search the web and return a short list of matching results.",
     input_schema={
         "type": "object",
         "properties": {
-            "query": {"type": "string"},
-            "max_results": {"type": "integer"},
+            "query": {
+                "type": "string",
+                "description": "The search query to send to the web search engine.",
+            },
+            "max_results": {
+                "type": "integer",
+                "description": "The maximum number of search results to return, capped by the tool.",
+            },
         },
         "required": ["query"],
     },
