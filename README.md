@@ -7,6 +7,9 @@
 - 多轮对话
 - Anthropic `tool_use` / `tool_result` 循环
 - 统一工具抽象、注册和分发
+- 基于会话状态的 `todo` 任务规划
+- 在 system prompt 中注入当前 todo 摘要
+- 要求“先规划 todo，再执行任务”的基础执行策略
 - 前台按“模型中间输出 -> 工具状态 -> 最终回答”的顺序展示
 - 启动配置校验、日志落盘、异常兜底
 
@@ -16,8 +19,16 @@
 - `read_file`：读取工作区内文本文件
 - `write_file`：写入工作区内文本文件
 - `web_search`：返回简短网页搜索结果
+- `todo`：管理当前会话中的任务列表
 
 工具定义和注册见 [tools/__init__.py](/home/luo/project/nano_code/tools/__init__.py) 和 [tools/registry.py](/home/luo/project/nano_code/tools/registry.py)。
+
+`todo` 工具当前支持：
+
+- `add`
+- `update`
+- `remove`
+- `read`
 
 ## 快速开始
 
@@ -45,20 +56,25 @@ uv run python main.py
 ```text
 > 读取 README.md
 > 当前目录有哪些 Python 文件
+> 帮我分步骤实现一个 todo 工具
 ```
 
-程序会维护会话历史，并在模型发起工具调用时自动执行工具，再将结果回填给模型继续推理。
+程序会维护会话历史和当前会话中的 todo 列表，并在模型发起工具调用时自动执行工具，再将结果回填给模型继续推理。
+当前 system prompt 会要求模型在处理每个新的用户任务时，先使用 `todo` 工具规划任务，再开始执行其他工作。
 
 ## 项目结构
 
 - [main.py](/home/luo/project/nano_code/main.py)：入口、日志、配置加载、主循环
 - [agent_config.py](/home/luo/project/nano_code/agent_config.py)：配置数据结构
+- [agent_runtime.py](/home/luo/project/nano_code/agent_runtime.py)：运行时依赖和会话状态容器
+- [todo.py](/home/luo/project/nano_code/todo.py)：Todo 数据结构与状态管理
 - [tools/base.py](/home/luo/project/nano_code/tools/base.py)：工具抽象
 - [tools/registry.py](/home/luo/project/nano_code/tools/registry.py)：工具注册与执行
 - [tools/bash.py](/home/luo/project/nano_code/tools/bash.py)：shell 工具
 - [tools/read_file.py](/home/luo/project/nano_code/tools/read_file.py)：读文件工具
 - [tools/write_file.py](/home/luo/project/nano_code/tools/write_file.py)：写文件工具
 - [tools/web_search.py](/home/luo/project/nano_code/tools/web_search.py)：网页搜索工具
+- [tools/todo.py](/home/luo/project/nano_code/tools/todo.py)：任务列表工具
 - [tools/utils.py](/home/luo/project/nano_code/tools/utils.py)：工作区路径限制
 - [todo.md](/home/luo/project/nano_code/todo.md)：任务清单
 - [running.md](/home/luo/project/nano_code/running.md)：当前迭代说明

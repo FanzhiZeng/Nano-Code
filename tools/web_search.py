@@ -83,7 +83,7 @@ def web_search(query: str, max_results: int = MAX_RESULTS) -> str:
     return "\n".join(lines)
 
 
-def web_search_handler(tool_input: dict[str, str | int]) -> str:
+def web_search_handler(tool_input: dict[str, str | int], runtime=None) -> str:
     query = str(tool_input["query"])
     max_results = int(tool_input.get("max_results", MAX_RESULTS))
     max_results = max(1, min(max_results, MAX_RESULTS))

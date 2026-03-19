@@ -9,7 +9,7 @@ def write_file(path: str, content: str) -> str:
     return f"Wrote {len(content)} characters to {path}"
 
 
-def write_handler(tool_input: dict[str, str]) -> str:
+def write_handler(tool_input: dict[str, str], runtime=None) -> str:
     path = tool_input["path"]
     content = tool_input["content"]
     return write_file(path, content)

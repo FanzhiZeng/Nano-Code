@@ -19,7 +19,7 @@ def read_file(path: str) -> str:
     return content[:MAX_READ_CHARS]
 
 
-def read_handler(tool_input: dict[str, str]) -> str:
+def read_handler(tool_input: dict[str, str], runtime=None) -> str:
     path = tool_input["path"]
     return read_file(path)
 

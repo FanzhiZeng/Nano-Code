@@ -1,7 +1,6 @@
 import os
 
 import logging
-from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
@@ -9,14 +8,24 @@ from anthropic import Anthropic
 from dotenv import load_dotenv
 
 from agent_config import Config
+from agent_runtime import AgentRuntime, AgentSession
+from todo import TodoManager
 
 from tools import execute_tool, get_tool_definitions
 
-SYSTEM = f"You are a coding agent at {os.getcwd()}."
+BASE_SYSTEM = (
+    f"You are a coding agent at {os.getcwd()}.\n"
+    "Use the available tools when needed.\n"
+    "For every new user task, use the todo tool first to create or update a plan before doing any other work.\n"
+    "Break the task into clear todo items, then execute the task.\n"
+    "Keep the todo list updated as work progresses, especially when starting, completing, blocking, or changing a step.\n"
+    "Do not skip todo planning, even when the task seems simple."
+)
 LOGGER_NAME = "nano_code"
 
 
 TOOLS = get_tool_definitions()
+
 
 def extract_text_from_blocks(content_blocks) -> str:
     parts = []
@@ -35,6 +44,11 @@ def print_assistant_message(content_blocks) -> None:
 def format_tool_status(block, status: str) -> str:
     tool_name = getattr(block, "name", "tool")
     return f"[{status}]: {tool_name}"
+
+
+def build_system_prompt(runtime: AgentRuntime) -> str:
+    todo_summary = runtime.session.todo_manager.render_text()
+    return f"{BASE_SYSTEM}\n\nCurrent session todos:\n{todo_summary}"
 
 
 def setup_logging() -> Path:
@@ -100,7 +114,26 @@ def build_client(config: Config) -> Anthropic:
     return Anthropic(**kwargs)
 
 
-def agent_loop(client: Anthropic, messages: list[dict], model_id: str) -> list[dict]:
+def execute_tool_block(block, runtime: AgentRuntime) -> dict:
+    print(format_tool_status(block, "Running"))
+    runtime.logger.info("Running tool %s with input: %s", block.name, block.input)
+
+    output = execute_tool(block.name, block.input, runtime=runtime)
+
+    print(format_tool_status(block, "Finish"))
+    runtime.logger.info("Tool %s output preview: %s", block.name, output[:1000])
+    return {"type": "tool_result", "tool_use_id": block.id, "content": output}
+
+
+def collect_tool_results(response, runtime: AgentRuntime) -> list[dict]:
+    results = []
+    for block in response.content:
+        if block.type == "tool_use":
+            results.append(execute_tool_block(block, runtime))
+    return results
+
+
+def agent_loop(runtime: AgentRuntime) -> list[dict]:
     """
     The tooluse Loop
     The entire secret of an AI coding agent in one pattern:
@@ -122,14 +155,15 @@ def agent_loop(client: Anthropic, messages: list[dict], model_id: str) -> list[d
     until the model decides to stop.
     """
 
-    logger = logging.getLogger(LOGGER_NAME)
+    logger = runtime.logger
+    messages = runtime.session.history
     logger.debug("Sending request with %s messages", len(messages))
 
     while True:
-        response = client.messages.create(
-            system=SYSTEM,
+        response = runtime.client.messages.create(
+            system=build_system_prompt(runtime),
             messages=messages,
-            model=model_id,
+            model=runtime.model_id,
             tools=TOOLS,
             max_tokens=2048,
         )
@@ -146,19 +180,7 @@ def agent_loop(client: Anthropic, messages: list[dict], model_id: str) -> list[d
         if response.stop_reason != "tool_use":
             break
 
-        # Execute each tool call, collect results
-        results = []
-        for block in response.content:
-            if block.type == "tool_use":
-                print(format_tool_status(block, "Running"))
-                logger.info("Running tool %s with input: %s", block.name, block.input)
-
-                output = execute_tool(block.name, block.input)
-
-                print(format_tool_status(block, "Finish"))
-                logger.info("Tool %s output preview: %s", block.name, output[:1000])
-                results.append({"type": "tool_result", "tool_use_id": block.id,
-                                "content": output})
+        results = collect_tool_results(response, runtime)
         messages.append({"role": "user", "content": results})
 
     return messages
@@ -169,10 +191,8 @@ def print_startup(config: Config, log_path: Path) -> None:
     print(f"Log file: {log_path}")
 
 
-def run(client: Anthropic, model_id: str) -> None:
-    logger = logging.getLogger(LOGGER_NAME)
-    history: list[dict] = []
-
+def run(runtime: AgentRuntime) -> None:
+    logger = runtime.logger
     while True:
         try:
             query = input("> ").strip()
@@ -189,12 +209,12 @@ def run(client: Anthropic, model_id: str) -> None:
             continue
 
         logger.info("User input received: %s", query)
-        history.append({"role": "user", "content": query})
+        runtime.session.history.append({"role": "user", "content": query})
 
         try:
-            history = agent_loop(client, history, model_id)
+            agent_loop(runtime)
         except Exception as exc:
-            history.pop()
+            runtime.session.history.pop()
             logger.exception("Request failed")
             print("Request failed. Check the log file for details.")
             continue
@@ -212,7 +232,14 @@ def main() -> None:
 
     print_startup(config, log_path)
     client = build_client(config)
-    run(client, config.model_id)
+    runtime = AgentRuntime(
+        client=client,
+        model_id=config.model_id,
+        logger=logging.getLogger(LOGGER_NAME),
+        workspace_root=Path.cwd().resolve(),
+        session=AgentSession(history=[], todo_manager=TodoManager()),
+    )
+    run(runtime)
 
 
 if __name__ == "__main__":

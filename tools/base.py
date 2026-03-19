@@ -1,7 +1,10 @@
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
-ToolHandler = Callable[[dict[str, Any]], str]
+if TYPE_CHECKING:
+    from agent_runtime import AgentRuntime
+
+ToolHandler = Callable[[dict[str, Any], "AgentRuntime | None"], str]
 
 @dataclass
 class Tool:

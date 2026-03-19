@@ -17,7 +17,7 @@ def run_bash(command: str) -> str:
         return "Error: Timeout (120s)"
 
 
-def bash_handler(tool_input: dict[str, str]) -> str:
+def bash_handler(tool_input: dict[str, str], runtime=None) -> str:
     command = tool_input["command"]
     return run_bash(command)
 
